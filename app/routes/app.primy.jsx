@@ -7,15 +7,15 @@ const TEMPLATE_SUFFIX = "thelistpost";
    Dynamic Blog IDs (main-cat -> blogId)
 ---------------------------- */
 const BLOG_ID_MAP = {
-  "Restaurants": "100939989224",
-  "Shopping": "100752425192",
+  Restaurants: "100939989224",
+  Shopping: "100752425192",
   "Health & Wellness": "100765925608",
   "Beauty & Spa": "100765958376",
   "Home Services": "100765991144",
   "Local Services": "100766023912",
   "Event Planning": "100766056680",
   "Professional Services": "100766089448",
-  "Automotive": "100766122216",
+  Automotive: "100766122216",
 };
 
 /* ---------------------------
@@ -68,25 +68,18 @@ function buildTags(value) {
 }
 
 /**
- * âœ… Dynamic subcategory finder:
+ * ✅ Dynamic subcategory finder:
  * - data me jo bhi key "sub-cat" se start hoti ho
  * - uska first non-empty value return
  * - returns { key, value }
+ *
+ * (Keeping this for backwards compatibility / logging)
  */
 function pickSubCategory(data) {
   if (!data || typeof data !== "object") return { key: "", value: "" };
 
   // Prefer known keys first if present
-  const preferred = [
-    "sub-cat2",
-    "sub-cat3",
-    "sub-cat4",
-    "sub-cat5",
-    "sub-cat6",
-    "sub-cat7",
-    "sub-cat8",
-    "sub-cat9",
-  ];
+  const preferred = ["sub-cat2", "sub-cat3", "sub-cat4", "sub-cat5", "sub-cat6", "sub-cat7", "sub-cat8", "sub-cat9"];
 
   for (const k of preferred) {
     const v = data[k];
@@ -106,6 +99,19 @@ function pickSubCategory(data) {
   }
 
   return { key: "", value: "" };
+}
+
+/**
+ * ✅ NEW: pick multiple tag values from exact keys (client requirement)
+ * Example keys: ["sub-cat9-4","sub-cat9-2","sub-cat9-3"]
+ */
+function pickTagsFromKeys(data, keys = []) {
+  if (!data || typeof data !== "object") return [];
+
+  return keys
+    .map((k) => data[k])
+    .filter((v) => v !== undefined && v !== null && String(v).trim() !== "")
+    .map((v) => String(v).trim());
 }
 
 async function resolveMyshopifyFromCustomDomain(customDomain, rid) {
@@ -297,10 +303,10 @@ export async function action({ request }) {
     // 2) Offline session
     const { session } = await unauthenticated.admin(shop);
     if (!session?.accessToken) {
-      return new Response(
-        JSON.stringify({ success: false, rid, message: "No offline access token found", shop }),
-        { status: 401, headers: { "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ success: false, rid, message: "No offline access token found", shop }), {
+        status: 401,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     const base = "https://" + session.shop + "/admin/api/" + API_VERSION;
@@ -308,12 +314,14 @@ export async function action({ request }) {
     // 3) Primy mapping
     const { entryId, documentId, data = {}, attachments = {} } = payload;
 
+    console.log(data);
+
     const author = data.Author;
     const visibility = data.Visibility;
 
     const mainCategory = String(data["main-cat"] || "").trim();
 
-    // âœ… dynamic subcategory (works for sub-cat6/sub-cat7/sub-cat9 etc.)
+    // Keeping previous sub-cat pick for debug/response (not used for tags now)
     const picked = pickSubCategory(data);
     const subCategory = picked.value;
     const subCatPickedKey = picked.key;
@@ -382,15 +390,19 @@ export async function action({ request }) {
       base,
       token: session.accessToken,
       url: gallery3?.[0]?.url || "",
-      filename: gallery3?.[0]?.filename || "gallery3.jpg",
+      filename: gallery3?.[0]?.filename || "galleryimg3.jpg",
       mimeType: gallery3?.[0]?.mimetype || "image/jpeg",
       label: "galleryimg3",
     });
 
     const featuredImageSrc = logoUp.resourceUrl || logoFile?.[0]?.url || "";
 
-    // âœ… only subCategory as tag (multi-word works)
-    const finalTags = buildTags(subCategory);
+    /* ✅ NEW TAG MAPPING (CLIENT REQUEST)
+       Tags = sub-cat9-4 + sub-cat9-2 + sub-cat9-3
+    */
+    const tagKeys = ["sub-cat9-4", "sub-cat9-2", "sub-cat9-3"];
+    const tagValues = pickTagsFromKeys(data, tagKeys);
+    const finalTags = buildTags(tagValues);
 
     // 4) Create article
     const createRes = await fetch(base + "/blogs/" + blogId + "/articles.json", {
@@ -430,6 +442,8 @@ export async function action({ request }) {
           status: createRes.status,
           response: createJson || createText,
           sentTags: finalTags,
+          tagKeys,
+          tagValues,
           subCatPickedKey,
           rawSubCategory: subCategory,
         }),
@@ -439,10 +453,10 @@ export async function action({ request }) {
 
     const articleId = createJson?.article?.id;
     if (!articleId) {
-      return new Response(
-        JSON.stringify({ success: false, rid, message: "Missing articleId", response: createJson }),
-        { status: 500, headers: { "Content-Type": "application/json" } }
-      );
+      return new Response(JSON.stringify({ success: false, rid, message: "Missing articleId", response: createJson }), {
+        status: 500,
+        headers: { "Content-Type": "application/json" },
+      });
     }
 
     // 5) Metafields
@@ -495,9 +509,14 @@ export async function action({ request }) {
         documentId,
         blogId,
         mainCategory,
+
+        // debug
         subCategory,
         subCatPickedKey,
+        tagKeys,
+        tagValues,
         sentTags: finalTags,
+
         articleId,
         logoUpload: logoUp,
         galleryUpload: { g1, g2, g3 },
@@ -510,9 +529,9 @@ export async function action({ request }) {
     if (err instanceof Response) return err;
 
     console.error("[" + rid + "] error", err);
-    return new Response(
-      JSON.stringify({ success: false, rid, message: "Server error", error: String(err) }),
-      { status: 500, headers: { "Content-Type": "application/json" } }
-    );
+    return new Response(JSON.stringify({ success: false, rid, message: "Server error", error: String(err) }), {
+      status: 500,
+      headers: { "Content-Type": "application/json" },
+    });
   }
 }
