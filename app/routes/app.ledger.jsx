@@ -1,6 +1,6 @@
 import { unauthenticated } from "../shopify.server";
 
-const API_VERSION = "2024-10";
+const API_VERSION = "2026-04";
 const TEMPLATE_SUFFIX = "theledgerpost";
 const DEFAULT_SHOP = "97f908-22.myshopify.com";
 
@@ -18,9 +18,28 @@ const BLOG_ID_MAP = {
 /* =========================
    METAFIELD HELPER
 ========================= */
+function normalizeUrl(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+
+  const candidate = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : "https://" + trimmed;
+
+  try {
+    const url = new URL(candidate);
+    return url.href;
+  } catch {
+    console.warn(`[metafield] Skipping invalid URL value: ${trimmed}`);
+    return "";
+  }
+}
+
 function mf(namespace, key, type, value) {
   if (!value || String(value).trim() === "") return null;
-  return { namespace, key, type, value: String(value) };
+  const finalValue = type === "url" ? normalizeUrl(value) : String(value);
+  if (!finalValue) return null;
+  return { namespace, key, type, value: finalValue };
 }
 
 /* =========================

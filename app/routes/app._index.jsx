@@ -35,6 +35,10 @@ export const action = async ({ request }) => {
               }
             }
           }
+          userErrors {
+            field
+            message
+          }
         }
       }`,
     {
@@ -46,7 +50,25 @@ export const action = async ({ request }) => {
     },
   );
   const responseJson = await response.json();
+  const productCreateErrors = responseJson.data?.productCreate?.userErrors || [];
+  if (!response.ok || responseJson.errors?.length || productCreateErrors.length) {
+    return {
+      error:
+        responseJson.errors?.[0]?.message ||
+        productCreateErrors[0]?.message ||
+        "Product creation failed",
+      details: responseJson,
+    };
+  }
+
   const product = responseJson.data.productCreate.product;
+  if (!product?.variants?.edges?.[0]?.node?.id) {
+    return {
+      error: "Product was created without a variant",
+      details: responseJson,
+    };
+  }
+
   const variantId = product.variants.edges[0].node.id;
   const variantResponse = await admin.graphql(
     `#graphql
@@ -58,6 +80,10 @@ export const action = async ({ request }) => {
           barcode
           createdAt
         }
+        userErrors {
+          field
+          message
+        }
       }
     }`,
     {
@@ -68,6 +94,18 @@ export const action = async ({ request }) => {
     },
   );
   const variantResponseJson = await variantResponse.json();
+  const variantErrors =
+    variantResponseJson.data?.productVariantsBulkUpdate?.userErrors || [];
+  if (!variantResponse.ok || variantResponseJson.errors?.length || variantErrors.length) {
+    return {
+      error:
+        variantResponseJson.errors?.[0]?.message ||
+        variantErrors[0]?.message ||
+        "Product variant update failed",
+      product,
+      details: variantResponseJson,
+    };
+  }
 
   return {
     product: responseJson.data.productCreate.product,
@@ -175,6 +213,20 @@ export default function Index() {
                 </pre>
               </s-box>
             </s-stack>
+          </s-section>
+        )}
+        {fetcher.data?.error && (
+          <s-section heading="Product action failed">
+            <s-box
+              padding="base"
+              borderWidth="base"
+              borderRadius="base"
+              background="subdued"
+            >
+              <pre style={{ margin: 0 }}>
+                <code>{JSON.stringify(fetcher.data, null, 2)}</code>
+              </pre>
+            </s-box>
           </s-section>
         )}
       </s-section>

@@ -1,6 +1,6 @@
 import { unauthenticated } from "../shopify.server";
 
-const API_VERSION = "2026-01";
+const API_VERSION = "2026-04";
 
 /* ---------------------------
    Dynamic Blog IDs (main-cat -> blogId)
@@ -20,9 +20,28 @@ const BLOG_ID_MAP = {
 /* ---------------------------
    Helpers
 ---------------------------- */
+function normalizeUrl(value) {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return "";
+
+  const candidate = /^https?:\/\//i.test(trimmed)
+    ? trimmed
+    : "https://" + trimmed;
+
+  try {
+    const url = new URL(candidate);
+    return url.href;
+  } catch {
+    console.warn(`[metafield] Skipping invalid URL value: ${trimmed}`);
+    return "";
+  }
+}
+
 function mf(namespace, key, type, value) {
   if (value === undefined || value === null || String(value).trim() === "") return null;
-  return { namespace, key, type, value: String(value) };
+  const finalValue = type === "url" ? normalizeUrl(value) : String(value);
+  if (!finalValue) return null;
+  return { namespace, key, type, value: finalValue };
 }
 
 function safeJsonParse(text) {
